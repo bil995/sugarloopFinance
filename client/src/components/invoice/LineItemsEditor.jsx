@@ -2,13 +2,13 @@ import { Plus, Trash2, AlertTriangle } from 'lucide-react';
 import { useFinanceStore, findPreviousPrice } from '../../store/useFinanceStore';
 import { formatCurrency, formatNumber } from '../../utils/format';
 import PriceChange from '../common/PriceChange';
+import ItemCombobox from '../common/ItemCombobox';
 
 export const emptyLine = () => ({ itemId: '', quantity: '', unitPrice: '' });
 export const lineAmount = (line) => Math.round((Number(line.quantity) || 0) * (Number(line.unitPrice) || 0) * 100) / 100;
 export const linesTotal = (lines) => lines.reduce((sum, line) => sum + lineAmount(line), 0);
 
 // Editable invoice lines: item (from catalog) · in hand · qty · unit price · amount · price change.
-// Typing an amount back-calculates the unit price.
 export default function LineItemsEditor({ lines, onChange, vendorId, receiptDate, excludeId, currency = 'PKR', readOnly = false, allowAdd = true }) {
   const items = useFinanceStore((s) => s.items);
   const records = useFinanceStore((s) => s.records);
@@ -17,12 +17,7 @@ export default function LineItemsEditor({ lines, onChange, vendorId, receiptDate
   const update = (index, patch) => onChange(lines.map((line, i) => (i === index ? { ...line, ...patch } : line)));
   const remove = (index) => onChange(lines.filter((_, i) => i !== index));
 
-  const setAmount = (index, value) => {
-    const qty = Number(lines[index].quantity);
-    if (qty > 0) update(index, { unitPrice: value === '' ? '' : Math.round((Number(value) / qty) * 10000) / 10000 });
-  };
-
-  const cell = 'w-full min-w-20 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm disabled:border-transparent disabled:bg-transparent';
+  const cell = 'w-full min-w-20 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm disabled:border-transparent disabled:bg-transparent [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none';
 
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200">
@@ -50,19 +45,19 @@ export default function LineItemsEditor({ lines, onChange, vendorId, receiptDate
             return (
               <tr key={index} className="border-t border-slate-100 align-top">
                 <td className="min-w-44 px-2 py-1.5">
-                  <select
-                    className={cell}
-                    value={line.itemId}
-                    disabled={readOnly}
-                    onChange={(e) => update(index, { itemId: e.target.value, previousUnitPrice: undefined })}
-                  >
-                    <option value="">Select item…</option>
-                    {items.map((i) => (
-                      <option key={i.id} value={i.id}>
-                        {i.name} ({i.unit})
-                      </option>
-                    ))}
-                  </select>
+                  {readOnly ? (
+                    <input
+                      className={cell}
+                      value={item?.name ?? ''}
+                      disabled
+                    />
+                  ) : (
+                    <ItemCombobox
+                      itemId={line.itemId}
+                      onChange={(id) => update(index, { itemId: id, previousUnitPrice: undefined })}
+                      className={cell}
+                    />
+                  )}
                 </td>
                 <td className="px-2 py-2.5 whitespace-nowrap">
                   {item ? (
@@ -83,13 +78,11 @@ export default function LineItemsEditor({ lines, onChange, vendorId, receiptDate
                 <td className="px-2 py-1.5">
                   <input
                     type="number"
-                    min="0"
-                    step="any"
                     className={cell}
                     value={line.quantity && line.unitPrice !== '' ? lineAmount(line) : ''}
-                    disabled={readOnly || !(Number(line.quantity) > 0)}
-                    title="Type the line total to calculate the unit price"
-                    onChange={(e) => setAmount(index, e.target.value)}
+                    disabled
+                    readOnly
+                    tabIndex={-1}
                   />
                 </td>
                 <td className="px-2 py-2.5">

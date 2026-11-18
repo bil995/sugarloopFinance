@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, ArrowUpDown, Eye, ShieldCheck, Trash2, Image } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Search, ArrowUpDown, Eye, Pencil, ShieldCheck, Trash2, Image } from 'lucide-react';
 import { useFinanceStore, useVisibleRecords } from '../../store/useFinanceStore';
 import { errorMessage } from '../../api/client';
 import { formatCurrency, formatDate, formatDateTime } from '../../utils/format';
@@ -7,6 +7,8 @@ import { CATEGORIES } from '../../utils/categories';
 import { PAYMENT_STATUSES, paymentStatus, itemDescription } from '../../utils/payment';
 import PaymentStatusBadge from '../common/PaymentStatusBadge';
 import ConfirmButton from '../common/ConfirmButton';
+import Modal from '../common/Modal';
+import PurchaseForm, { purchaseFromRecord } from '../../stock/components/PurchaseForm';
 import { useCan } from '../../utils/permissions';
 
 const SORTS = {
@@ -55,24 +57,62 @@ const InvoiceNo = ({ record }) => (
 );
 
 // Vendor ledger: Date · Supplier · Invoice No · Item description · Amount · Bill · Payment status.
-// Pass `vendorId` to pin it to one vendor (vendor detail page).
-export default function LedgerTable({ vendorId, title = 'Vendor Ledger' }) {
-  const records = useVisibleRecords(vendorId ? { vendorId, category: 'ALL' } : {});
+// Pass `vendorId` to pin it to one vendor. Pass `from`/`to` (YYYY-MM-DD) to override the period filter.
+export default function LedgerTable({ vendorId, from, to, title = 'Vendor Ledger' }) {
+  const overrides = { ...(vendorId ? { vendorId, category: 'ALL' } : {}), ...(from ? { from } : {}), ...(to ? { to } : {}) };
+  const records = useVisibleRecords(overrides);
   const openInspector = useFinanceStore((s) => s.openInspector);
   const deleteRecord = useFinanceStore((s) => s.deleteRecord);
   const can = useCan();
   const [deleteError, setDeleteError] = useState('');
+  const [editingId, setEditingId] = useState(null);
+  const allRecords = useFinanceStore((s) => s.records);
   const flashIds = useFinanceStore((s) => s.flashIds);
+  const storePaymentStatus = useFinanceStore((s) => s.selectedPaymentStatus);
   const flashRef = useRef(null); // table row (tablet / desktop)
   const flashCardRef = useRef(null); // card (phone)
+  const tableScrollRef = useRef(null);
+  const railScrollRef = useRef(null);
+  const [tableScrollWidth, setTableScrollWidth] = useState(0);
+  const [tableClientWidth, setTableClientWidth] = useState(0);
+
+  useEffect(() => {
+    const el = tableScrollRef.current;
+    if (!el) return;
+    const update = () => { setTableScrollWidth(el.scrollWidth); setTableClientWidth(el.clientWidth); };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const onTableScroll = useCallback(() => {
+    if (railScrollRef.current && tableScrollRef.current)
+      railScrollRef.current.scrollLeft = tableScrollRef.current.scrollLeft;
+  }, []);
+
+  const onRailScroll = useCallback(() => {
+    if (tableScrollRef.current && railScrollRef.current)
+      tableScrollRef.current.scrollLeft = railScrollRef.current.scrollLeft;
+  }, []);
   const [query, setQuery] = useState('');
   const [payment, setPayment] = useState('ALL');
   const [sortBy, setSortBy] = useState('date');
 
+  // Sync payment filter from dashboard stat-card clicks (dashboard mode only, not vendor detail).
+  useEffect(() => {
+    if (!vendorId) setPayment(storePaymentStatus);
+  }, [storePaymentStatus, vendorId]);
+
   const rows = useMemo(() => {
     const q = query.toLowerCase();
+    const matchesPayment = (r) => {
+      if (payment === 'ALL') return true;
+      if (payment === 'OUTSTANDING') return paymentStatus(r) === 'UNPAID' || paymentStatus(r) === 'PARTIAL';
+      return paymentStatus(r) === payment;
+    };
     return records
-      .filter((r) => payment === 'ALL' || paymentStatus(r) === payment)
+      .filter(matchesPayment)
       .filter(
         (r) =>
           !q ||
@@ -110,6 +150,17 @@ export default function LedgerTable({ vendorId, title = 'Vendor Ledger' }) {
         <Trash2 className="h-4 w-4" /> Delete
       </ConfirmButton>
     );
+  // Bills with products open in the full purchase form; amount-only bills are edited in the inspector.
+  const editButton = (r) =>
+    can('editInvoice') && (
+      <button
+        onClick={() => (r.items?.length ? setEditingId(r.id) : openInspector(r.id))}
+        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-slate-600 hover:bg-slate-100"
+      >
+        <Pencil className="h-4 w-4" /> Edit
+      </button>
+    );
+  const editing = allRecords.find((r) => r.id === editingId);
   const rowTone = (r) => (flashIds.includes(r.id) ? 'bg-emerald-50' : 'hover:bg-indigo-50/50');
 
   const control = 'rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm';
@@ -117,7 +168,7 @@ export default function LedgerTable({ vendorId, title = 'Vendor Ledger' }) {
     `rounded-full border px-3 py-1 text-xs font-medium ${active ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300 bg-white text-slate-600 hover:border-indigo-400'}`;
 
   return (
-    <section className="min-w-0 rounded-xl border border-slate-200 bg-white">
+    <section id="ledger" className="min-w-0 rounded-xl border border-slate-200 bg-white">
       <div className="space-y-3 border-b border-slate-200 p-4">
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="mr-auto font-semibold text-slate-900">
@@ -148,6 +199,11 @@ export default function LedgerTable({ vendorId, title = 'Vendor Ledger' }) {
               {PAYMENT_STATUSES[key].label} ({counts[key] ?? 0})
             </button>
           ))}
+          {payment === 'OUTSTANDING' && (
+            <button onClick={() => setPayment('OUTSTANDING')} className={chip(true)}>
+              Outstanding ({(counts.UNPAID ?? 0) + (counts.PARTIAL ?? 0)})
+            </button>
+          )}
         </div>
       </div>
 
@@ -168,13 +224,21 @@ export default function LedgerTable({ vendorId, title = 'Vendor Ledger' }) {
                   <InvoiceNo record={r} /> · {formatDate(r.receiptDate)}
                 </div>
               </div>
-              <div className="shrink-0 font-semibold tabular-nums text-slate-900">{formatCurrency(r.amount, r.currency)}</div>
+              <div className="shrink-0 text-right">
+                <div className="font-semibold tabular-nums text-slate-900">{formatCurrency(r.amount, r.currency)}</div>
+                {paymentStatus(r) === 'PARTIAL' && (
+                  <div className="text-xs font-semibold text-amber-600">
+                    {formatCurrency(r.balance ?? r.amount - r.amountPaid, r.currency)} due
+                  </div>
+                )}
+              </div>
             </div>
             <p className="line-clamp-1 text-xs text-slate-500">{itemDescription(r, CATEGORIES[r.category]?.label)}</p>
             <div className="flex flex-wrap items-center gap-2">
               <PaymentStatusBadge record={r} />
               <BillBadge record={r} />
               <span className="ml-auto" onClick={(e) => e.stopPropagation()}>
+                {editButton(r)}
                 {deleteButton(r)}
               </span>
             </div>
@@ -184,7 +248,7 @@ export default function LedgerTable({ vendorId, title = 'Vendor Ledger' }) {
       </ul>
 
       {/* Tablet and up: table */}
-      <div className="hidden overflow-x-auto md:block">
+      <div ref={tableScrollRef} className="hidden overflow-x-scroll md:block [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]" onScroll={onTableScroll}>
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
             <tr>
@@ -215,7 +279,14 @@ export default function LedgerTable({ vendorId, title = 'Vendor Ledger' }) {
                 <td className="max-w-80 px-4 py-2.5 text-slate-600">
                   <span className="line-clamp-2">{itemDescription(r, CATEGORIES[r.category]?.label)}</span>
                 </td>
-                <td className="px-4 py-2.5 text-right font-medium whitespace-nowrap tabular-nums">{formatCurrency(r.amount, r.currency)}</td>
+                <td className="px-4 py-2.5 text-right font-medium whitespace-nowrap tabular-nums">
+                  {formatCurrency(r.amount, r.currency)}
+                  {paymentStatus(r) === 'PARTIAL' && (
+                    <div className="text-xs font-semibold text-amber-600">
+                      {formatCurrency(r.balance ?? r.amount - r.amountPaid, r.currency)} due
+                    </div>
+                  )}
+                </td>
                 <td className="px-4 py-2.5 whitespace-nowrap">
                   <BillBadge record={r} />
                 </td>
@@ -227,6 +298,7 @@ export default function LedgerTable({ vendorId, title = 'Vendor Ledger' }) {
                     <button onClick={() => openInspector(r.id)} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-indigo-600 hover:bg-indigo-50">
                       <Eye className="h-4 w-4" /> Open
                     </button>
+                    {editButton(r)}
                     {deleteButton(r)}
                   </div>
                 </td>
@@ -242,6 +314,34 @@ export default function LedgerTable({ vendorId, title = 'Vendor Ledger' }) {
           </tbody>
         </table>
       </div>
+
+      {/* Synced horizontal scrollbar rail — always visible when table overflows */}
+      {tableScrollWidth > tableClientWidth && (
+        <div
+          ref={railScrollRef}
+          onScroll={onRailScroll}
+          className="hidden md:block overflow-x-scroll border-t border-slate-200 bg-white sticky bottom-0 z-10"
+          style={{ height: 14 }}
+        >
+          <div style={{ width: tableScrollWidth, height: 1 }} />
+        </div>
+      )}
+
+      {editing && (
+        <Modal
+          title={`Edit ${editing.vendorName}${editing.invoiceNumber ? ` · ${editing.invoiceNumber}` : ''}`}
+          onClose={() => setEditingId(null)}
+          width="max-w-5xl"
+        >
+          <PurchaseForm
+            key={editing.id}
+            record={editing}
+            initial={purchaseFromRecord(editing)}
+            onSaved={() => setEditingId(null)}
+            onCancel={() => setEditingId(null)}
+          />
+        </Modal>
+      )}
     </section>
   );
 }

@@ -13,6 +13,25 @@ import VendorDetailPage from './pages/VendorDetailPage';
 import InventoryPage from './pages/InventoryPage';
 import LiabilitiesPage from './pages/LiabilitiesPage';
 import UsersPage from './pages/UsersPage';
+import LedgerPeriodsPage from './pages/LedgerPeriodsPage';
+import WMSPage from './pages/WMSPage';
+import StockLayout, { BASE as STOCK_BASE } from './stock/StockLayout';
+import PurchasePage from './stock/pages/PurchasePage';
+import EditPurchasePage from './stock/pages/EditPurchasePage';
+import PurchaseReturnPage from './stock/pages/PurchaseReturnPage';
+import EditReturnPage from './stock/pages/EditReturnPage';
+import PrintPurchasePage from './stock/pages/PrintPurchasePage';
+import PurchaseSearchPage from './stock/pages/PurchaseSearchPage';
+import StockRefreshPage from './stock/pages/StockRefreshPage';
+import ConsumptionPage from './stock/pages/ConsumptionPage';
+import SalePage from './stock/pages/SalePage';
+import EditSalePage from './stock/pages/EditSalePage';
+import PrintSalePage from './stock/pages/PrintSalePage';
+import SaleSearchPage from './stock/pages/SaleSearchPage';
+import CustomersPage from './stock/pages/CustomersPage';
+import SaleOutPage from './stock/pages/SaleOutPage';
+import SaleOutSearchPage from './stock/pages/SaleOutSearchPage';
+import EditPricePage from './stock/pages/EditPricePage';
 
 const RequirePermission = ({ permission, children }) => (useCan()(permission) ? children : <Navigate to="/" replace />);
 
@@ -41,6 +60,17 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/invoices/:id/print" element={<InvoicePrintPage />} />
+        {/* Stock module preview: own URL, not in the main menu until it's finalised. */}
+        <Route path={STOCK_BASE} element={<StockLayout />}>
+          <Route index element={<Navigate to="purchase" replace />} />
+          <Route path="purchase" element={<PurchasePage />} />
+          <Route path="edit-purchase" element={<EditPurchasePage />} />
+          <Route path="purchase-return" element={<PurchaseReturnPage />} />
+          <Route path="edit-return" element={<EditReturnPage />} />
+          <Route path="print-purchase" element={<PrintPurchasePage />} />
+          <Route path="purchase-search" element={<PurchaseSearchPage />} />
+          <Route path="*" element={<Navigate to="purchase" replace />} />
+        </Route>
         <Route element={<AppLayout />}>
           <Route index element={<DashboardPage />} />
           <Route
@@ -63,9 +93,30 @@ export default function App() {
               </RequirePermission>
             }
           />
+          <Route
+            path="ledger-periods"
+            element={
+              <RequirePermission permission="managePeriods">
+                <LedgerPeriodsPage />
+              </RequirePermission>
+            }
+          />
+          <Route path="wms" element={<WMSPage />}>
+            <Route index element={<Navigate to="stock-refresh" replace />} />
+            <Route path="stock-refresh" element={<StockRefreshPage />} />
+            <Route path="consumption" element={<ConsumptionPage />} />
+            <Route path="sale" element={<SalePage />} />
+            <Route path="edit-sale" element={<EditSalePage />} />
+            <Route path="print-sale" element={<PrintSalePage />} />
+            <Route path="sale-search" element={<SaleSearchPage />} />
+            <Route path="customers" element={<CustomersPage />} />
+            <Route path="saleout" element={<SaleOutPage />} />
+            <Route path="saleout-search" element={<SaleOutSearchPage />} />
+            <Route path="edit-price" element={<EditPricePage />} />
+          </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
     </BrowserRouter>
-  );
+  )
 }

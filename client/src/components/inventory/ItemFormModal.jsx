@@ -6,8 +6,8 @@ import Field, { inputClass, buttonClass } from '../common/Field';
 
 export default function ItemFormModal({ item, onClose }) {
   const saveItem = useFinanceStore((s) => s.saveItem);
-  const [units, setUnits] = useState(['kg']);
-  const [form, setForm] = useState(item ?? { name: '', unit: 'kg', reorderLevel: 0, openingStock: 0, notes: '' });
+  const [units, setUnits] = useState(['Kg']);
+  const [form, setForm] = useState(item ?? { name: '', unit: 'Kg', reorderLevel: 0, openingStock: 0, notes: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const set = (field) => (e) => setForm({ ...form, [field]: e.target.value });
@@ -48,7 +48,8 @@ export default function ItemFormModal({ item, onClose }) {
           <input required className={inputClass} value={form.name} onChange={set('name')} placeholder="e.g. Flour (Maida)" />
         </Field>
         <Field label="Unit">
-          <select className={inputClass} value={form.unit} onChange={set('unit')}>
+          <select className={inputClass} value={form.unit ?? ''} onChange={set('unit')}>
+            <option value="">No unit</option>
             {units.map((u) => (
               <option key={u}>{u}</option>
             ))}

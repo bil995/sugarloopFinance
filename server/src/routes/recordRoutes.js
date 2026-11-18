@@ -5,6 +5,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import BillingRecord from '../models/BillingRecord.js';
 import Vendor from '../models/Vendor.js';
+import PurchaseReturn from '../models/PurchaseReturn.js';
 import { EXPENSE_CATEGORIES, PAYMENT_METHODS } from '../constants/categories.js';
 import { requireAdmin, requireManager } from '../middleware/auth.js';
 import { httpError } from '../middleware/errorHandler.js';
@@ -12,6 +13,7 @@ import { recalcVendorTotals } from '../services/vendorTotals.js';
 import { syncRecordStock } from '../services/stock.js';
 import { attachPreviousPrices, buildLines, nextPurchaseInvoiceNo } from '../services/invoices.js';
 import { findOrCreateVendor } from '../services/vendors.js';
+import LedgerPeriod from '../models/LedgerPeriod.js';
 
 // File type -> extension we store it under (so viewers can tell PDFs from images).
 const EXTENSIONS = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp', 'application/pdf': '.pdf' };
@@ -97,6 +99,17 @@ router.get('/categories', (req, res) => res.json(EXPENSE_CATEGORIES));
 
 router.get('/:id', async (req, res) => res.json(await findRecord(req.params.id)));
 
+// Manager: remove the receipt image from a bill (file deleted from disk).
+router.delete('/:id/image', requireManager, async (req, res) => {
+  const record = await findRecord(req.params.id);
+  if (!record.imageUrl) throw httpError(400, 'This bill has no receipt image');
+  const url = record.imageUrl;
+  record.imageUrl = undefined;
+  await record.save();
+  await removeUpload(url);
+  res.json(record);
+});
+
 // Manager: attach or replace the receipt image of an existing bill. The previous file is removed.
 router.post('/:id/image', requireManager, upload.single('image'), async (req, res) => {
   if (!req.file) throw httpError(400, 'Upload a PNG, JPG, WebP or PDF file');
@@ -114,16 +127,18 @@ router.post('/:id/image', requireManager, upload.single('image'), async (req, re
 // entry can attach a receipt image: it is then sent as multipart form data with the
 // bill fields as JSON in a `data` field. All values are typed by the user; the
 // image is only stored, not read.
-// Only managers/admins can verify or record a payment while creating.
+// Only managers/admins can verify, record a payment or add a new vendor or product while creating.
 router.post('/', upload.single('image'), async (req, res) => {
   const imageUrl = req.file && `/uploads/${req.file.filename}`;
   try {
     const body = req.is('multipart/form-data') ? JSON.parse(req.body.data ?? '{}') : req.body;
-    const vendor = body.vendorId ? await Vendor.findById(body.vendorId) : await findOrCreateVendor(body.vendorName, body.category);
-    if (!vendor) throw httpError(404, 'Vendor not found');
     const isManager = ['ADMIN', 'MANAGER'].includes(req.user.role);
+    const vendor = body.vendorId
+      ? await Vendor.findById(body.vendorId)
+      : await findOrCreateVendor(body.vendorName, body.category, { create: isManager });
+    if (!vendor) throw httpError(404, 'Vendor not found');
 
-    const items = await buildLines(body.items);
+    const items = await buildLines(body.items, { createItems: isManager });
     const record = new BillingRecord({
       ...pick(body),
       category: body.category || vendor.defaultCategory,
@@ -134,6 +149,7 @@ router.post('/', upload.single('image'), async (req, res) => {
       createdBy: req.user.name,
       ...(imageUrl && { imageUrl }),
     });
+    await checkDuplicateInvoice(record.invoiceNumber, vendor.id);
     await attachPreviousPrices(record);
     if (isManager && body.verify) markVerified(record, req.user);
     if (isManager && body.payment) {
@@ -154,13 +170,52 @@ router.post('/', upload.single('image'), async (req, res) => {
   }
 });
 
-// Manager: edit fields / line items.
+const sameName = (a, b) => String(a ?? '').trim().replace(/\s+/g, ' ').toLowerCase() === String(b ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+// Reject if this vendor already has a non-flagged bill with the same invoice number
+// within the current active period (so invoice numbers can repeat across periods).
+const checkDuplicateInvoice = async (invoiceNumber, vendorId, excludeId = null) => {
+  const inv = String(invoiceNumber ?? '').trim();
+  if (!inv) return;
+  const active = await LedgerPeriod.findOne({ endDate: null });
+  const query = { invoiceNumber: inv, vendorId, flagged: { $ne: true } };
+  if (active) query.receiptDate = { $gte: active.startDate };
+  if (excludeId) query._id = { $ne: excludeId };
+  const existing = await BillingRecord.findOne(query).select('invoiceNumber vendorName receiptDate');
+  if (existing) {
+    const date = existing.receiptDate ? new Date(existing.receiptDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+    throw httpError(409, `Invoice #${inv} already exists for this supplier${date ? ` (billed on ${date})` : ''}. Remove the duplicate or change the invoice number.`);
+  }
+};
+
+// Move a bill to the vendor named in an edit (found or created) when it names a different
+// one. The bill takes its payments along and gets a purchase invoice number from its new
+// vendor. Returns the vendor it left (to refresh its totals after saving), or null.
+const moveToVendor = async (record, vendorName) => {
+  if (vendorName === undefined || sameName(vendorName, record.vendorName)) return null;
+  const vendor = await findOrCreateVendor(vendorName);
+  if (String(vendor.id) === String(record.vendorId)) return null;
+  if (await PurchaseReturn.exists({ recordId: record._id })) {
+    throw httpError(400, "This bill has purchase returns against it, so its vendor can't be changed. Delete the returns first.");
+  }
+  const previousVendorId = record.vendorId;
+  record.vendorId = vendor.id;
+  record.vendorName = vendor.name;
+  record.purchaseInvoiceNo = await nextPurchaseInvoiceNo(vendor.id);
+  return previousVendorId;
+};
+
+// Manager: edit fields / line items, or move the bill to another vendor (vendorName).
 router.patch('/:id', requireManager, async (req, res) => {
   const record = await findRecord(req.params.id);
   record.set(pick(req.body));
-  if ('items' in req.body) record.items = await buildLines(req.body.items);
+  const leftVendorId = await moveToVendor(record, req.body.vendorName);
+  if ('items' in req.body) record.items = await buildLines(req.body.items, { createItems: true });
+  await checkDuplicateInvoice(record.invoiceNumber, record.vendorId, record._id);
   await attachPreviousPrices(record);
-  res.json(await commit(record, req.user));
+  const saved = await commit(record, req.user);
+  if (leftVendorId) await recalcVendorTotals(leftVendorId);
+  res.json(saved);
 });
 
 // Manager: verification actions from the inspector.
@@ -173,12 +228,12 @@ router.patch('/:id', requireManager, async (req, res) => {
 router.post('/:id/status', requireManager, async (req, res) => {
   const record = await findRecord(req.params.id);
   const { status, payment = {}, changes } = req.body;
+  let leftVendorId = null;
   if (changes) {
     record.set(pick(changes));
-    if ('items' in changes) {
-      record.items = await buildLines(changes.items);
-      await attachPreviousPrices(record);
-    }
+    leftVendorId = await moveToVendor(record, changes.vendorName);
+    if ('items' in changes) record.items = await buildLines(changes.items);
+    if (leftVendorId || 'items' in changes) await attachPreviousPrices(record);
   }
 
   if (status === 'FLAGGED') {
@@ -197,7 +252,9 @@ router.post('/:id/status', requireManager, async (req, res) => {
   } else {
     throw httpError(400, 'Status must be PAID, PENDING or FLAGGED');
   }
-  res.json(await commit(record, req.user));
+  const saved = await commit(record, req.user);
+  if (leftVendorId) await recalcVendorTotals(leftVendorId);
+  res.json(saved);
 });
 
 // Manager: record a (partial) payment against a bill.

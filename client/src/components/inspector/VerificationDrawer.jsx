@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { X, CheckCircle2, Clock, XCircle, Printer, Save, Lock, ShieldCheck, ImageOff, Upload } from 'lucide-react';
+import { X, CheckCircle2, Clock, XCircle, Printer, Save, Lock, ShieldCheck, ImageOff, Upload, FileText, Trash2 } from 'lucide-react';
+import { buttonClass } from '../common/Field';
 import { useFinanceStore } from '../../store/useFinanceStore';
 import { errorMessage } from '../../api/client';
 import { useCan } from '../../utils/permissions';
+import { findVendorByName } from '../../utils/vendors';
 import { CATEGORIES, CATEGORY_KEYS } from '../../utils/categories';
 import { formatCurrency, formatDateTime, toDateInput } from '../../utils/format';
 import StatusBadge from '../common/StatusBadge';
@@ -28,23 +30,42 @@ const toForm = (record) => ({
 
 export default function VerificationDrawer() {
   const record = useFinanceStore((s) => s.records.find((r) => r.id === s.inspectedRecordId));
+  const allRecords = useFinanceStore((s) => s.records);
   const closeInspector = useFinanceStore((s) => s.closeInspector);
   const updateRecord = useFinanceStore((s) => s.updateRecord);
   const setRecordStatus = useFinanceStore((s) => s.setRecordStatus);
   const deleteRecord = useFinanceStore((s) => s.deleteRecord);
   const attachReceipt = useFinanceStore((s) => s.attachReceipt);
+  const deleteReceipt = useFinanceStore((s) => s.deleteReceipt);
+  const vendors = useFinanceStore((s) => s.vendors);
   const can = useCan();
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [draggingReceipt, setDraggingReceipt] = useState(false);
+  const receiptInputRef = useRef(null);
+  // Pending receipt file: staged in the form, uploaded on Save.
+  const [pendingFile, setPendingFile] = useState(null);
+  const [pendingPreview, setPendingPreview] = useState(null);
+  const [draggingForm, setDraggingForm] = useState(false);
+  const formFileRef = useRef(null);
   // Result of the last action, tied to the bill it was for: { id, text }
   const [notice, setNotice] = useState(null);
   const [working, setWorking] = useState(null); // status being applied, for the button label
+
+  useEffect(() => () => { if (pendingPreview) URL.revokeObjectURL(pendingPreview); }, [pendingPreview]);
+
+  const setPending = (file) => {
+    if (!file) { setPendingFile(null); setPendingPreview(null); return; }
+    setPendingFile(file);
+    setPendingPreview(file.type.startsWith('image/') ? URL.createObjectURL(file) : null);
+  };
 
   // Reset the form when a different record opens or the record changes on the server.
   useEffect(() => {
     setForm(record ? toForm(record) : null);
     setError('');
+    setPending(null);
   }, [record?.id, record?.updatedAt]);
 
   useEffect(() => {
@@ -52,6 +73,19 @@ export default function VerificationDrawer() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [closeInspector]);
+
+  const dupBill = useMemo(() => {
+    if (!form || !record) return null;
+    const inv = String(form.invoiceNumber ?? '').trim();
+    if (!inv) return null;
+    return allRecords.find(
+      (r) =>
+        r.id !== record.id &&
+        r.status !== 'FLAGGED' &&
+        r.vendorId === record.vendorId &&
+        String(r.invoiceNumber ?? '').trim().toLowerCase() === inv.toLowerCase()
+    ) ?? null;
+  }, [form?.invoiceNumber, record?.id, record?.vendorId, allRecords]);
 
   if (!record || !form) return null;
 
@@ -78,7 +112,10 @@ export default function VerificationDrawer() {
     items: form.items.filter((l) => l.itemId).map(({ itemId, quantity, unitPrice }) => ({ itemId, quantity: Number(quantity), unitPrice: Number(unitPrice) })),
   });
 
-  const save = () => run(() => updateRecord(record.id, payload()));
+  const save = () => run(async () => {
+    await updateRecord(record.id, payload());
+    if (pendingFile) await attachReceipt(record.id, pendingFile);
+  });
   // Save edits and apply the verification action in one request.
   const act = (status) => {
     setWorking(status);
@@ -95,35 +132,80 @@ export default function VerificationDrawer() {
   };
 
   return (
-    <div className="fixed inset-0 z-20 flex justify-end bg-slate-900/40" onClick={closeInspector}>
+    <div className="fixed inset-0 z-20 flex justify-end bg-gray-900/40" onClick={closeInspector}>
       <div
         className="flex h-full w-full max-w-[1500px] flex-col bg-white shadow-xl md:flex-row"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Left (top on phones): the receipt, or a way to attach one when the bill has none. */}
-        <div className="flex h-[35vh] min-w-0 shrink-0 bg-slate-800 md:h-auto md:flex-1">
+        {/* Left (top on phones): the receipt image, with drag-and-drop to attach/replace. */}
+        <div
+          className={`relative flex h-[35vh] min-w-0 shrink-0 bg-gray-800 md:h-auto md:flex-1 ${!readOnly ? 'cursor-pointer' : ''} ${draggingReceipt ? 'ring-4 ring-inset ring-indigo-400' : ''}`}
+          onDragOver={(e) => { if (!readOnly) { e.preventDefault(); setDraggingReceipt(true); } }}
+          onDragLeave={() => setDraggingReceipt(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDraggingReceipt(false);
+            if (readOnly || busy) return;
+            const file = e.dataTransfer.files[0];
+            if (file) run(() => attachReceipt(record.id, file));
+          }}
+          onClick={() => { if (!readOnly && !busy && !record.imageUrl) receiptInputRef.current?.click(); }}
+          title={readOnly ? undefined : record.imageUrl ? 'Drop an image to replace the receipt' : 'Click or drop to attach receipt'}
+        >
           {record.imageUrl ? (
-            <ReceiptViewer src={record.imageUrl} />
+            <>
+              <ReceiptViewer src={record.imageUrl} />
+              {!readOnly && !draggingReceipt && (
+                <div className="absolute bottom-2 right-2 flex gap-1">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); if (!busy) receiptInputRef.current?.click(); }}
+                    className="inline-flex items-center gap-1 rounded-md bg-black/50 px-2 py-1 text-xs font-medium text-white hover:bg-black/70"
+                  >
+                    <Upload className="h-3 w-3" /> Replace
+                  </button>
+                  <ConfirmButton
+                    disabled={busy}
+                    onConfirm={() => run(() => deleteReceipt(record.id))}
+                    title="Delete receipt image?"
+                    message="The image will be permanently removed from this bill. This cannot be undone."
+                    confirmLabel="Delete image"
+                    className="inline-flex items-center gap-1 rounded-md bg-black/50 px-2 py-1 text-xs font-medium text-rose-300 hover:bg-rose-900/70"
+                  >
+                    <Trash2 className="h-3 w-3" /> Delete
+                  </ConfirmButton>
+                </div>
+              )}
+            </>
           ) : (
-            <div className="m-auto flex max-w-xs flex-col items-center gap-3 p-6 text-center text-slate-300">
-              <ImageOff className="h-10 w-10 text-slate-500" />
+            <div className="m-auto flex max-w-xs flex-col items-center gap-3 p-6 text-center text-gray-300">
+              <ImageOff className="h-10 w-10 text-gray-500" />
               <p className="text-sm">No receipt image for this bill{record.billAvailable === false ? ' (vendor gave no bill)' : ''}.</p>
               {!readOnly && (
-                <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-white/10 px-3 py-2 text-sm font-medium text-white hover:bg-white/20 ${busy ? 'pointer-events-none opacity-50' : ''}`}>
-                  <Upload className="h-4 w-4" /> {busy ? 'Uploading…' : 'Upload receipt'}
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp,application/pdf"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files[0];
-                      e.target.value = '';
-                      if (file) run(() => attachReceipt(record.id, file));
-                    }}
-                  />
-                </label>
+                <span className={`inline-flex items-center gap-1.5 rounded-md bg-white/10 px-3 py-2 text-sm font-medium text-white ${busy ? 'opacity-50' : ''}`}>
+                  <Upload className="h-4 w-4" /> {busy ? 'Uploading…' : 'Click or drop to upload'}
+                </span>
               )}
             </div>
+          )}
+          {!readOnly && draggingReceipt && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-indigo-900/60 text-white">
+              <Upload className="h-8 w-8" />
+              <span className="text-sm font-medium">Drop to {record.imageUrl ? 'replace' : 'attach'}</span>
+            </div>
+          )}
+          {!readOnly && (
+            <input
+              ref={receiptInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,application/pdf"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files[0];
+                e.target.value = '';
+                if (file) run(() => attachReceipt(record.id, file));
+              }}
+            />
           )}
         </div>
 
@@ -159,8 +241,26 @@ export default function VerificationDrawer() {
               </p>
             )}
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <label className="col-span-1 block">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="block">
+                Supplier
+                <input
+                  className={inputClass}
+                  list="drawer-vendors"
+                  value={form.vendorName ?? ''}
+                  onChange={set('vendorName')}
+                  disabled={readOnly}
+                />
+                <datalist id="drawer-vendors">
+                  {vendors.map((v) => (
+                    <option key={v.id} value={v.name} />
+                  ))}
+                </datalist>
+                {!readOnly && form.vendorName.trim() && !findVendorByName(vendors, form.vendorName) && (
+                  <span className="mt-1 block text-xs text-slate-500">New supplier — it will be added to the vendor list.</span>
+                )}
+              </label>
+              <label className="block">
                 Category
                 <select className={inputClass} value={form.category} onChange={set('category')} disabled={readOnly}>
                   {CATEGORY_KEYS.map((key) => (
@@ -172,7 +272,12 @@ export default function VerificationDrawer() {
               </label>
               <label className="block">
                 Invoice No
-                <input className={inputClass} value={form.invoiceNumber ?? ''} onChange={set('invoiceNumber')} disabled={readOnly} />
+                <input className={`${inputClass} ${dupBill ? 'border-rose-400' : ''}`} value={form.invoiceNumber ?? ''} onChange={set('invoiceNumber')} disabled={readOnly} />
+                {dupBill && (
+                  <span className="mt-1 block text-xs text-rose-600">
+                    Duplicate — already entered on {new Date(dupBill.receiptDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}.
+                  </span>
+                )}
               </label>
               <label className="block">
                 Receipt date
@@ -199,13 +304,67 @@ export default function VerificationDrawer() {
 
             <label className="block">
               Total amount (PKR) {hasLines && <span className="text-xs text-slate-400">(sum of items)</span>}
-              <input type="number" step="0.01" className={inputClass} value={hasLines ? linesTotal(form.items) : form.amount} onChange={set('amount')} disabled={readOnly || hasLines} />
+              <input type="number" step="0.01" className={`${inputClass} [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`} value={hasLines ? linesTotal(form.items) : form.amount} onChange={set('amount')} disabled={readOnly || hasLines} />
             </label>
 
             <label className="block">
               Notes
               <textarea rows={2} className={inputClass} value={form.notes ?? ''} onChange={set('notes')} disabled={readOnly} />
             </label>
+
+            {!readOnly && (
+              <div>
+                <span className="text-xs font-medium text-slate-500 uppercase">
+                  {record.imageUrl ? 'Replace receipt image' : 'Attach receipt image'}
+                </span>
+                <div
+                  onDragOver={(e) => { e.preventDefault(); setDraggingForm(true); }}
+                  onDragLeave={() => setDraggingForm(false)}
+                  onDrop={(e) => { e.preventDefault(); setDraggingForm(false); const f = e.dataTransfer.files[0]; if (f) setPending(f); }}
+                  onClick={() => formFileRef.current?.click()}
+                  className={`relative mt-1.5 flex cursor-pointer items-center justify-center rounded-lg border-2 border-dashed p-3 transition ${
+                    draggingForm ? 'border-indigo-500 bg-indigo-50' : 'border-slate-300 hover:border-indigo-400'
+                  }`}
+                >
+                  {pendingPreview ? (
+                    <img src={pendingPreview} alt="Preview" className="max-h-28 rounded object-contain" />
+                  ) : pendingFile ? (
+                    <span className="flex items-center gap-2 text-sm text-slate-600">
+                      <FileText className="h-4 w-4 text-slate-400" /> {pendingFile.name}
+                    </span>
+                  ) : (
+                    <span className="flex flex-col items-center gap-1 text-center text-xs text-slate-500">
+                      <Upload className="h-5 w-5 text-slate-400" />
+                      Drop or click — saved when you click Save changes
+                    </span>
+                  )}
+                  {pendingFile && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setPending(null); }}
+                      className="absolute right-1.5 top-1.5 rounded-full bg-white p-0.5 text-slate-400 shadow hover:text-rose-600"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                  <input ref={formFileRef} type="file" accept="image/png,image/jpeg,image/webp,application/pdf" className="hidden" onChange={(e) => { const f = e.target.files[0]; e.target.value = ''; if (f) setPending(f); }} />
+                </div>
+              </div>
+            )}
+
+            <div>
+              <span className="text-xs font-medium text-slate-500 uppercase">Bill available?</span>
+              <div className="mt-1.5 flex gap-5 text-sm">
+                <label className="flex items-center gap-1.5">
+                  <input type="radio" name="drawer-billAvailable" checked={form.billAvailable !== false} disabled={readOnly} onChange={() => setForm({ ...form, billAvailable: true })} />
+                  Yes
+                </label>
+                <label className="flex items-center gap-1.5">
+                  <input type="radio" name="drawer-billAvailable" checked={form.billAvailable === false} disabled={readOnly} onChange={() => setForm({ ...form, billAvailable: false })} />
+                  No bill
+                </label>
+              </div>
+            </div>
 
             <PaymentsPanel record={record} />
           </div>
@@ -247,7 +406,7 @@ export default function VerificationDrawer() {
                 )}
               </div>
               <div className="flex items-center justify-between">
-                <button disabled={busy} onClick={save} className="inline-flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900 disabled:opacity-50">
+                <button disabled={busy} onClick={save} className={`inline-flex items-center gap-1.5 ${buttonClass.primary}`}>
                   <Save className="h-4 w-4" /> Save changes only
                 </button>
                 {can('deleteInvoice') && (
@@ -257,9 +416,9 @@ export default function VerificationDrawer() {
                     title="Delete this bill?"
                     message={`${record.vendorName}${record.invoiceNumber ? ` · Invoice ${record.invoiceNumber}` : ''} · ${formatCurrency(record.amount, record.currency)} will be deleted with its receipt image and payments. This cannot be undone.`}
                     confirmLabel="Delete bill"
-                    className="rounded-md px-2 py-1 text-sm text-rose-600 hover:bg-rose-50"
+                    className="inline-flex items-center gap-1.5 rounded-md bg-rose-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-50"
                   >
-                    Delete invoice
+                    <Trash2 className="h-4 w-4" /> Delete invoice
                   </ConfirmButton>
                 )}
               </div>
