@@ -10,7 +10,8 @@
     "seed": "node src/seed.js",
     "create-admin": "node src/scripts/createAdmin.js",
     "rename-unit": "node src/scripts/renameUnit.js",
-    "backup": "node scripts/backup.js"
+    "backup": "node scripts/backup.js",
+    "restore": "node scripts/restore.js"
   },
   "keywords": [],
   "author": "",
