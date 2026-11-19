@@ -10,7 +10,7 @@ import 'dotenv/config';
 import mongoose from 'mongoose';
 import fs from 'node:fs';
 import path from 'node:path';
-import { execSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
@@ -60,6 +60,14 @@ async function run() {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 
   console.log(`\nBackup saved: ${zipPath}`);
+
+  // Off-server copy. The server's IAM role should only allow PutObject, so a compromised
+  // server can add backups but not delete existing ones.
+  const bucket = process.env.BACKUP_S3_BUCKET;
+  if (bucket) {
+    execFileSync('aws', ['s3', 'cp', zipPath, `s3://${bucket}/sugarloop/`, '--only-show-errors'], { stdio: 'inherit' });
+    console.log(`Uploaded to s3://${bucket}/sugarloop/${path.basename(zipPath)}`);
+  }
 
   const files = fs.readdirSync(BACKUP_DIR)
     .filter((f) => f.startsWith('sugarloop-') && f.endsWith('.zip'))
