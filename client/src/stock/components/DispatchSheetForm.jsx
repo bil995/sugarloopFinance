@@ -38,6 +38,10 @@ export default function DispatchSheetForm({ catalog, allItems, type, saleDate, o
   const [error, setError] = useState(null);
   const [saved, setSaved] = useState(null);
   const [editingId, setEditingId] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestionIndex, setSuggestionIndex] = useState(-1);
+  const searchInputRef = useRef(null);
 
   const tableRef = useRef(null);
 
@@ -51,6 +55,26 @@ export default function DispatchSheetForm({ catalog, allItems, type, saleDate, o
     const target = all[e.key === 'ArrowDown' ? idx + 1 : idx - 1];
     if (target) { target.focus(); target.select(); }
   };
+
+  // Ctrl+F → focus search box
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  // Scroll to first match when query changes
+  useEffect(() => {
+    if (!searchQuery.trim() || !tableRef.current) return;
+    const first = tableRef.current.querySelector('[data-search-match="true"]');
+    if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [searchQuery]);
 
   // Load a saved record back into the form for editing
   const loadForEdit = (rec) => {
@@ -127,6 +151,20 @@ export default function DispatchSheetForm({ catalog, allItems, type, saleDate, o
         const updated = { ...r, [field]: val };
         if (field === 'dispatched') updated.received = val;
         if (field === 'name') {
+          const trimmed = val.trim();
+          // Duplicate check: catalog items
+          const isCatalogDup = allItems.some((it) => it.name.toLowerCase() === trimmed.toLowerCase());
+          // Duplicate check: other custom rows across all categories
+          const allCustomNames = Object.values(prev).flat()
+            .filter((cr) => cr.id !== id)
+            .map((cr) => cr.name.trim().toLowerCase());
+          const isCustomDup = allCustomNames.includes(trimmed.toLowerCase());
+          updated.dupError = trimmed && (isCatalogDup || isCustomDup)
+            ? isCatalogDup
+              ? `"${trimmed}" is already in the catalog — enter qty directly in its row above.`
+              : `"${trimmed}" is already added.`
+            : '';
+          // Auto-fill price from catalog
           const catalogMatch = allItems.find((it) => it.name === val);
           if (catalogMatch) updated.price = getPrice(type, val, catalogMatch.price);
         }
@@ -179,6 +217,11 @@ export default function DispatchSheetForm({ catalog, allItems, type, saleDate, o
       setError('Please select a branch.');
       return;
     }
+    const hasDups = Object.values(customRows).flat().some((r) => r.dupError);
+    if (hasDups) {
+      setError('Fix duplicate item names before saving.');
+      return;
+    }
     const lines = [...catalogLines, ...customLines];
 
     setSaving(true);
@@ -199,6 +242,13 @@ export default function DispatchSheetForm({ catalog, allItems, type, saleDate, o
       setSaving(false);
     }
   };
+
+  const searchQ = searchQuery.trim().toLowerCase();
+  const isMatch = (name) => searchQ && name.toLowerCase().includes(searchQ);
+  const matchCount = searchQ ? allItems.filter((it) => isMatch(it.name)).length : 0;
+  const suggestions = searchQ
+    ? allItems.filter((it) => it.name.toLowerCase().includes(searchQ)).slice(0, 8)
+    : [];
 
   let serial = 0;
 
@@ -255,6 +305,91 @@ export default function DispatchSheetForm({ catalog, allItems, type, saleDate, o
           </select>
         </div>
         <div className="flex-1 min-w-48">
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Search Item
+            {searchQ && <span className="ml-2 text-indigo-500">{matchCount} match{matchCount !== 1 ? 'es' : ''}</span>}
+          </label>
+          <div className="relative">
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => { setSearchQuery(e.target.value); setShowSuggestions(true); setSuggestionIndex(-1); }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') { setSearchQuery(''); setShowSuggestions(false); setSuggestionIndex(-1); return; }
+                if (!showSuggestions || suggestions.length === 0) return;
+                if (e.key === 'ArrowDown') { e.preventDefault(); setSuggestionIndex((i) => Math.min(i + 1, suggestions.length - 1)); return; }
+                if (e.key === 'ArrowUp') { e.preventDefault(); setSuggestionIndex((i) => Math.max(i - 1, -1)); return; }
+                const active = suggestionIndex >= 0 ? suggestions[suggestionIndex] : suggestions[0];
+                if (e.key === 'Tab') {
+                  e.preventDefault();
+                  setSearchQuery(active.name);
+                  setShowSuggestions(false);
+                  setSuggestionIndex(-1);
+                }
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  setSearchQuery(active.name);
+                  setShowSuggestions(false);
+                  setSuggestionIndex(-1);
+                  setTimeout(() => {
+                    if (!tableRef.current) return;
+                    const first = tableRef.current.querySelector('[data-search-match="true"]');
+                    if (first) {
+                      first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      const inp = first.querySelector('input[data-nav="dispatched"]');
+                      if (inp) inp.focus();
+                    }
+                  }, 50);
+                }
+              }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => { setShowSuggestions(false); setSuggestionIndex(-1); }, 200)}
+              placeholder="Search items… (Ctrl+F)"
+              autoComplete="off"
+              className="w-full rounded-md border border-slate-300 px-3 py-1.5 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+            {searchQ && (
+              <button onMouseDown={(e) => { e.preventDefault(); setSearchQuery(''); setShowSuggestions(false); setSuggestionIndex(-1); }} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">✕</button>
+            )}
+            {showSuggestions && suggestions.length > 0 && (
+              <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-md border border-slate-200 bg-white shadow-xl">
+                {suggestions.map((it, si) => {
+                  const idx = it.name.toLowerCase().indexOf(searchQ);
+                  const isActive = si === suggestionIndex || (suggestionIndex === -1 && si === 0 && false);
+                  return (
+                    <div
+                      key={it.name}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setSearchQuery(it.name);
+                        setShowSuggestions(false);
+                        setSuggestionIndex(-1);
+                        setTimeout(() => {
+                          if (!tableRef.current) return;
+                          const first = tableRef.current.querySelector('[data-search-match="true"]');
+                          if (first) {
+                            first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            const inp = first.querySelector('input[data-nav="dispatched"]');
+                            if (inp) inp.focus();
+                          }
+                        }, 50);
+                      }}
+                      className={`cursor-pointer border-b border-slate-100 px-3 py-2 text-sm last:border-0 ${isActive ? 'bg-indigo-100 text-indigo-700' : 'text-slate-700 hover:bg-indigo-50 hover:text-indigo-700'}`}
+                    >
+                      {it.name.slice(0, idx)}
+                      <span className="bg-yellow-200 font-semibold text-gray-900 dark:bg-yellow-500">
+                        {it.name.slice(idx, idx + searchQ.length)}
+                      </span>
+                      {it.name.slice(idx + searchQ.length)}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex-1 min-w-48">
           <label className="mb-1 block text-xs font-medium text-slate-600">Notes (optional)</label>
           <input
             type="text"
@@ -300,17 +435,24 @@ export default function DispatchSheetForm({ catalog, allItems, type, saleDate, o
                   const qty = Number(dispatched[item.name]) || 0;
                   const price = Number(prices[item.name]) || item.price;
                   const total = qty * price;
+                  const matched = isMatch(item.name);
                   return (
-                    <tr key={item.name} className={`border-t border-slate-100 ${cat.colorClass}`}>
+                    <tr key={item.name} data-search-match={matched || undefined} className={`border-t border-slate-100 ${matched ? 'bg-yellow-100 dark:bg-yellow-900/30' : cat.colorClass}`}>
                       <td className="px-3 py-1.5 text-center text-slate-400 text-xs border-r border-slate-200">
                         {serial}
                       </td>
-                      <td className="px-3 py-1.5">{item.name}</td>
+                      <td className="px-3 py-1.5">
+                        {matched ? (() => {
+                          const idx = item.name.toLowerCase().indexOf(searchQ);
+                          return <><span>{item.name.slice(0, idx)}</span><span className="bg-yellow-300 font-semibold text-gray-900 dark:bg-yellow-500">{item.name.slice(idx, idx + searchQ.length)}</span><span>{item.name.slice(idx + searchQ.length)}</span></>;
+                        })() : item.name}
+                      </td>
                       <td className="px-3 py-1.5 text-center">
                         <input
                           type="number"
                           min="0"
                           data-nav="dispatched"
+                          data-item-name={item.name}
                           value={dispatched[item.name]}
                           onChange={(e) => setDispatchedQty(item.name, e.target.value)}
                           onKeyDown={(e) => handleArrow(e, 'dispatched')}
@@ -359,8 +501,13 @@ export default function DispatchSheetForm({ catalog, allItems, type, saleDate, o
                           value={row.name}
                           placeholder="Item name"
                           onChange={(e) => updateCustomRow(cat.category, row.id, 'name', e.target.value)}
-                          className="w-full rounded border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                          className={`w-full rounded border px-2 py-0.5 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-1 ${
+                            row.dupError
+                              ? 'border-rose-400 bg-rose-50 focus:ring-rose-400'
+                              : 'border-indigo-200 bg-indigo-50 focus:ring-indigo-400'
+                          }`}
                         />
+                        {row.dupError && <p className="mt-0.5 text-xs text-rose-500 leading-tight">{row.dupError}</p>}
                       </td>
                       <td className="px-3 py-1.5 text-center">
                         <input

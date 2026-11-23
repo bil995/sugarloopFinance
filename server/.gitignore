@@ -4,3 +4,7 @@ uploads/*
 !uploads/.gitkeep
 ADMIN_LOGIN.txt
 .cache/
+
+# Backups/copies of env files hold real secrets
+.env.*
+!.env.example
