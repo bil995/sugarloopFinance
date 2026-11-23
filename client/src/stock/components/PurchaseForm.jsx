@@ -7,6 +7,7 @@ import { findVendorByName } from '../../utils/vendors';
 import { PAYMENT_METHODS, formatCurrency, formatDate, formatNumber, today, toDateInput } from '../../utils/format';
 import { CATEGORIES, CATEGORY_KEYS } from '../../utils/categories';
 import Field, { inputClass, buttonClass } from '../../components/common/Field';
+import BranchField from '../../components/common/BranchField';
 import PriceChange from '../../components/common/PriceChange';
 import { lineAmount, linesTotal } from '../../components/invoice/LineItemsEditor';
 import SearchPicker, { findTyped } from './SearchPicker';
@@ -34,6 +35,7 @@ export const purchaseFromRecord = (record) => ({
   notes: record.notes ?? '',
   billAvailable: record.billAvailable !== false,
   category: record.category ?? 'RAW_PROCUREMENT',
+  branch: record.branch ?? '',
   items: record.items.map(({ itemId, quantity, unitPrice, previousUnitPrice }) => ({ itemId, quantity, unitPrice, previousUnitPrice })),
 });
 
@@ -262,7 +264,7 @@ export default function PurchaseForm({ initial, record, onSaved, onCancel }) {
       receiptDate: form.receiptDate,
       notes: form.notes,
       billAvailable: form.billAvailable,
-      ...(editing && form.category && { category: form.category }),
+      ...(editing && form.category && { category: form.category, branch: form.category === 'BRANCHES' ? form.branch : '' }),
       items: form.items.map(({ itemId, itemName, unit, quantity, unitPrice }) => ({
         ...(itemId ? { itemId } : { itemName, unit }),
         quantity: Number(quantity),
@@ -362,6 +364,7 @@ export default function PurchaseForm({ initial, record, onSaved, onCancel }) {
             </select>
           </Field>
         )}
+        {editing && <BranchField category={form.category} value={form.branch} onChange={set('branch')} className="sm:col-span-2" />}
       </div>
 
       {/* ---- Product detail (entry bar) ---- */}

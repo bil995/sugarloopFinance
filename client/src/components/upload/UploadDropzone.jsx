@@ -6,6 +6,7 @@ import { findVendorByName } from '../../utils/vendors';
 import { CATEGORIES, CATEGORY_KEYS } from '../../utils/categories';
 import { formatCurrency, today } from '../../utils/format';
 import Field, { inputClass, buttonClass } from '../common/Field';
+import BranchField from '../common/BranchField';
 import { linesTotal } from '../invoice/LineItemsEditor';
 import QuickItemsEditor from './QuickItemsEditor';
 
@@ -20,6 +21,7 @@ const PAY_STATUSES = [
 const EMPTY = {
   vendorName: '',
   category: 'MISC_OPERATIONS',
+  branch: '',
   amount: '',
   invoiceNumber: '',
   receiptDate: today(),
@@ -107,6 +109,7 @@ export default function UploadDropzone() {
         {
           vendorName: form.vendorName,
           category: form.category,
+          ...(form.category === 'BRANCHES' && { branch: form.branch }),
           amount,
           invoiceNumber: form.invoiceNumber.trim() || undefined,
           receiptDate: form.receiptDate,
@@ -248,6 +251,8 @@ export default function UploadDropzone() {
             </select>
           </Field>
         </div>
+
+        <BranchField category={form.category} value={form.branch} onChange={set('branch')} />
 
         <div className="text-sm text-slate-700">
           Items <span className="text-xs text-slate-400">(optional)</span>

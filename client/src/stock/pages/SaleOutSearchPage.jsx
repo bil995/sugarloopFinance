@@ -22,7 +22,7 @@ const fmtDate = (iso) => {
 
 function Tabs({ active, onChange }) {
   return (
-    <div className="flex gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1 w-fit print:hidden dark:border-slate-700 dark:bg-slate-800">
+    <div className="flex gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1 w-fit print:hidden">
       {[
         { key: 'perishable', label: 'Perishable' },
         { key: 'nonperishable', label: 'Non-Perishable' },
@@ -32,8 +32,8 @@ function Tabs({ active, onChange }) {
           onClick={() => onChange(t.key)}
           className={`rounded-lg px-5 py-1.5 text-sm font-medium transition-colors ${
             active === t.key
-              ? 'bg-white text-indigo-700 shadow-sm dark:bg-slate-900 dark:text-indigo-400'
-              : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-100'
+              ? 'bg-white text-indigo-700 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700'
           }`}
         >
           {t.label}
@@ -118,7 +118,7 @@ export default function SaleOutSearchPage() {
   });
   const dates = Object.keys(dateMap).sort();
 
-  // Build flat column list: all 5 known branches + any extra (e.g. no-branch entries)
+  // Build flat column list: all known branches + any extra (e.g. no-branch entries)
   const cols = [];
   dates.forEach((dk) => {
     const knownBranchSet = new Set(BRANCHES);
@@ -146,38 +146,38 @@ export default function SaleOutSearchPage() {
       <Tabs active={activeTab} onChange={setActiveTab} />
 
       {/* Filters */}
-      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 print:hidden dark:border-slate-700 dark:bg-slate-800">
+      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 print:hidden">
         <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">From</label>
+          <label className="mb-1 block text-xs font-medium text-slate-600">From</label>
           <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100" />
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">To</label>
+          <label className="mb-1 block text-xs font-medium text-slate-600">To</label>
           <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100" />
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
         </div>
         <button onClick={handleSearch}
           className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700">
           Search
         </button>
         <button onClick={() => window.print()}
-          className="ml-auto inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700">
+          className="ml-auto inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50">
           <Printer className="h-4 w-4" /> Print
         </button>
       </div>
 
       {error && <p className="rounded-md bg-rose-50 px-4 py-2 text-sm text-rose-700">{error}</p>}
-      {loading && <p className="text-sm text-slate-500 dark:text-slate-400">Loading…</p>}
+      {loading && <p className="text-sm text-slate-500">Loading…</p>}
 
       {!loading && dates.length === 0 && (
-        <p className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+        <p className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-500">
           No {activeTab === 'perishable' ? 'Perishable' : 'Non-Perishable'} entries found for this date range.
         </p>
       )}
 
       {!loading && cols.length > 0 && (
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800">
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
           <table className="min-w-full text-xs">
             <thead>
               <tr className="bg-amber-500 text-white">
@@ -219,10 +219,10 @@ export default function SaleOutSearchPage() {
                               min="0"
                               value={editQtys[item.name] ?? 0}
                               onChange={(e) => setEditQtys((prev) => ({ ...prev, [item.name]: e.target.value }))}
-                              className="w-14 rounded border border-indigo-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400 dark:border-indigo-600 dark:bg-slate-700 dark:text-slate-100"
+                              className="w-14 rounded border border-indigo-300 px-1 py-0.5 text-center text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
                             />
                           ) : (
-                            qty > 0 ? qty : <span className="text-slate-300 dark:text-slate-600">0</span>
+                            qty > 0 ? qty : <span className="text-slate-300">0</span>
                           )}
                         </td>
                       );
@@ -232,35 +232,35 @@ export default function SaleOutSearchPage() {
               )}
             </tbody>
             <tfoot>
-              <tr className="border-t-2 border-slate-300 bg-green-200 font-semibold text-green-900 dark:bg-green-900/30 dark:text-green-200 dark:border-slate-600">
-                <td colSpan={3} className="px-2 py-2 text-right text-xs border-r border-slate-300 dark:border-slate-600">Daily Total</td>
+              <tr className="border-t-2 border-slate-300 bg-green-200 font-semibold text-green-900 dark:bg-green-900/30 dark:text-green-200">
+                <td colSpan={3} className="px-2 py-2 text-right text-xs border-r border-slate-300">Daily Total</td>
                 {cols.map((col) => (
-                  <td key={`${col.dk}-${col.br}`} className="px-2 py-2 text-center tabular-nums border-r border-slate-300 dark:border-slate-600">
+                  <td key={`${col.dk}-${col.br}`} className="px-2 py-2 text-center tabular-nums border-r border-slate-300">
                     {col.rec
                       ? formatCurrency(col.rec.grandTotal)
-                      : <span className="text-slate-300 dark:text-slate-600 font-normal">—</span>}
+                      : <span className="text-slate-300 font-normal">—</span>}
                   </td>
                 ))}
               </tr>
-              <tr className="print:hidden bg-slate-50 border-t border-slate-200 dark:bg-slate-900/50 dark:border-slate-700">
-                <td colSpan={3} className="px-2 py-1 text-xs text-slate-400 border-r border-slate-200 dark:border-slate-700">Actions</td>
+              <tr className="print:hidden bg-slate-50 border-t border-slate-200">
+                <td colSpan={3} className="px-2 py-1 text-xs text-slate-400 border-r border-slate-200">Actions</td>
                 {cols.map((col) => {
                   const colKey = `${col.dk}-${col.br}`;
                   const isEditing = editColKey === colKey;
                   return (
-                    <td key={colKey} className="px-1 py-1 text-center border-r border-slate-200 dark:border-slate-700">
+                    <td key={colKey} className="px-1 py-1 text-center border-r border-slate-200">
                       {isEditing ? (
                         <div className="flex items-center justify-center gap-1">
                           <button
                             onClick={() => saveEdit(col)}
                             disabled={saving}
-                            className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 disabled:opacity-50"
+                            className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
                           >
                             <Check className="h-3 w-3" /> Save
                           </button>
                           <button
                             onClick={cancelEdit}
-                            className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700"
+                            className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-xs text-slate-500 hover:bg-slate-100"
                           >
                             <X className="h-3 w-3" />
                           </button>
@@ -270,14 +270,14 @@ export default function SaleOutSearchPage() {
                           <div className="flex items-center justify-center gap-1">
                             <button
                               onClick={() => startEdit(col)}
-                              className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-xs text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30"
+                              className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-xs text-indigo-600 hover:bg-indigo-50"
                             >
                               <Pencil className="h-3 w-3" /> Edit
                             </button>
                             {can('manageUsers') && (
                               <button
                                 onClick={() => handleDelete(col.rec.id)}
-                                className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-xs text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/30"
+                                className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-xs text-rose-600 hover:bg-rose-50"
                               >
                                 <Trash2 className="h-3 w-3" /> Del
                               </button>

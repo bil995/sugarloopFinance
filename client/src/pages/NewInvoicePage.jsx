@@ -9,11 +9,13 @@ import { CATEGORIES, CATEGORY_KEYS } from '../utils/categories';
 import { PAYMENT_METHODS, formatCurrency, today } from '../utils/format';
 import PageHeader from '../components/common/PageHeader';
 import Field, { inputClass, buttonClass } from '../components/common/Field';
+import BranchField from '../components/common/BranchField';
 import LineItemsEditor, { emptyLine, linesTotal } from '../components/invoice/LineItemsEditor';
 
 const blankForm = () => ({
   vendorName: '',
   category: '',
+  branch: '',
   invoiceNumber: '',
   receiptDate: today(),
   currency: 'PKR',
@@ -57,6 +59,7 @@ export default function NewInvoicePage() {
       const record = await createRecord({
         vendorName: form.vendorName,
         category: form.category,
+        ...(form.category === 'BRANCHES' && { branch: form.branch }),
         invoiceNumber: form.invoiceNumber,
         receiptDate: form.receiptDate,
         currency: form.currency,
@@ -66,7 +69,7 @@ export default function NewInvoicePage() {
         ...(form.paid && { payment: { ...form.payment, amount: linesTotal(items) } }),
       });
       setCreated(record);
-      setForm({ ...blankForm(), vendorName: record.vendorName, category: form.category });
+      setForm({ ...blankForm(), vendorName: record.vendorName, category: form.category, branch: form.branch });
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -130,6 +133,7 @@ export default function NewInvoicePage() {
               ))}
             </select>
           </Field>
+          <BranchField category={form.category} value={form.branch} onChange={set('branch')} className="sm:col-span-2" />
           <Field label="Invoice No (optional)" className="sm:col-span-2">
             <input className={inputClass} value={form.invoiceNumber} onChange={set('invoiceNumber')} />
           </Field>

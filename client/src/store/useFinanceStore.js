@@ -22,6 +22,7 @@ export const useFinanceStore = create((set, get) => ({
   // Global filters
   selectedVendorId: 'ALL',
   selectedCategory: 'ALL',
+  selectedBranch: 'ALL', // sub-filter of the Branches category
   selectedPaymentStatus: 'ALL',
   dateRange: { from: '', to: '' },
   inspectedRecordId: null,
@@ -33,7 +34,8 @@ export const useFinanceStore = create((set, get) => ({
   flashIds: [],
 
   setSelectedVendor: (selectedVendorId) => set({ selectedVendorId }),
-  setSelectedCategory: (selectedCategory) => set({ selectedCategory }),
+  setSelectedCategory: (selectedCategory) => set({ selectedCategory, selectedBranch: 'ALL' }),
+  setSelectedBranch: (selectedBranch) => set({ selectedBranch }),
   setDateRange: (dateRange) => set({ dateRange }),
   setSelectedPaymentStatus: (selectedPaymentStatus) => set({ selectedPaymentStatus }),
   openInspector: (inspectedRecordId) => set({ inspectedRecordId }),
@@ -203,12 +205,13 @@ export const useFinanceStore = create((set, get) => ({
 }));
 
 // Apply the global vendor / category / date filters (or explicit overrides).
-export const filterRecords = (records, { vendorId = 'ALL', category = 'ALL', from = '', to = '' }) =>
+export const filterRecords = (records, { vendorId = 'ALL', category = 'ALL', branch = 'ALL', from = '', to = '' }) =>
   records.filter((r) => {
     const date = toDateInput(r.receiptDate);
     return (
       (vendorId === 'ALL' || r.vendorId === vendorId) &&
       (category === 'ALL' || r.category === category) &&
+      (category !== 'BRANCHES' || branch === 'ALL' || r.branch === branch) &&
       (!from || date >= from) &&
       (!to || date <= to)
     );
@@ -227,6 +230,7 @@ export const useVisibleRecords = (overrides = {}) =>
       return filterRecords(s.records, {
         vendorId: overrides.vendorId ?? s.selectedVendorId,
         category: overrides.category ?? s.selectedCategory,
+        branch: overrides.branch ?? s.selectedBranch,
         from,
         to,
       });

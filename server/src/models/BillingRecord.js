@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { EXPENSE_CATEGORIES, STATUSES, CURRENCIES, PAYMENT_METHODS } from '../constants/categories.js';
+import { EXPENSE_CATEGORIES, BILL_BRANCHES, STATUSES, CURRENCIES, PAYMENT_METHODS } from '../constants/categories.js';
 import { jsonOptions } from './jsonOptions.js';
 
 const round2 = (n) => Math.round(n * 100) / 100;
@@ -34,6 +34,7 @@ const billingRecordSchema = new mongoose.Schema(
     vendorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Vendor', required: true },
     vendorName: String,
     category: { type: String, enum: EXPENSE_CATEGORIES, required: true },
+    branch: { type: String, enum: BILL_BRANCHES, set: (v) => v || undefined }, // only for BRANCHES bills
     source: { type: String, enum: ['OCR', 'MANUAL'], default: 'OCR' },
 
     // Invoice details
@@ -82,6 +83,9 @@ billingRecordSchema.virtual('balance').get(function () {
 
 // Keep line amounts, totals, payments and status consistent on every save.
 billingRecordSchema.pre('save', function () {
+  // A branch only belongs on a BRANCHES bill; blank means none.
+  if (this.category !== 'BRANCHES' || !this.branch) this.branch = undefined;
+
   if (this.items.length) {
     for (const line of this.items) line.amount = round2(line.quantity * line.unitPrice);
     this.amount = round2(this.items.reduce((sum, line) => sum + line.amount, 0));

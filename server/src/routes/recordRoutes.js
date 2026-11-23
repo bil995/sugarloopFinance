@@ -31,6 +31,7 @@ const upload = multer({
 
 const EDITABLE = [
   'category',
+  'branch',
   'invoiceNumber',
   'receiptDate',
   'amount',

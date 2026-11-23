@@ -1,6 +1,6 @@
-import { Car, Fuel, Wrench, Wheat, Layers } from 'lucide-react';
+import { Car, Fuel, Wrench, Wheat, Layers, Store } from 'lucide-react';
 
-// Sugarloop's 5 core expense categories. `fields` are category-specific details
+// Sugarloop's expense categories. `fields` are category-specific details
 // kept on older bills (no longer shown in the bill panel).
 export const CATEGORIES = {
   INDRIVE_LOGISTICS: {
@@ -48,6 +48,15 @@ export const CATEGORIES = {
     badge: 'bg-slate-200 text-slate-700',
     fields: [{ key: 'customTag', label: 'Custom Tag' }],
   },
+  BRANCHES: {
+    label: 'Branches',
+    icon: Store,
+    badge: 'bg-rose-100 text-rose-700',
+    fields: [],
+  },
 };
+
+// Branches a BRANCHES bill can be charged to (same list as the server).
+export const BILL_BRANCHES = ['DHA-1', 'DHA-2', 'BH-4', 'Nust-1', 'Nust-2'];
 
 export const CATEGORY_KEYS = Object.keys(CATEGORIES);

@@ -233,7 +233,7 @@ export default function LedgerTable({ vendorId, from, to, title = 'Vendor Ledger
                 )}
               </div>
             </div>
-            <p className="line-clamp-1 text-xs text-slate-500">{itemDescription(r, CATEGORIES[r.category]?.label)}</p>
+            <p className="line-clamp-1 text-xs text-slate-500">{r.branch && <span className="font-medium text-rose-700">{r.branch} · </span>}{itemDescription(r, CATEGORIES[r.category]?.label)}</p>
             <div className="flex flex-wrap items-center gap-2">
               <PaymentStatusBadge record={r} />
               <BillBadge record={r} />
@@ -277,7 +277,7 @@ export default function LedgerTable({ vendorId, from, to, title = 'Vendor Ledger
                   <InvoiceNo record={r} />
                 </td>
                 <td className="max-w-80 px-4 py-2.5 text-slate-600">
-                  <span className="line-clamp-2">{itemDescription(r, CATEGORIES[r.category]?.label)}</span>
+                  <span className="line-clamp-2">{r.branch && <span className="font-medium text-rose-700">{r.branch} · </span>}{itemDescription(r, CATEGORIES[r.category]?.label)}</span>
                 </td>
                 <td className="px-4 py-2.5 text-right font-medium whitespace-nowrap tabular-nums">
                   {formatCurrency(r.amount, r.currency)}

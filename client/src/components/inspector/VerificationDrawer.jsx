@@ -11,6 +11,7 @@ import { formatCurrency, formatDateTime, toDateInput } from '../../utils/format'
 import StatusBadge from '../common/StatusBadge';
 import ConfirmButton from '../common/ConfirmButton';
 import { inputClass } from '../common/Field';
+import BranchField from '../common/BranchField';
 import ReceiptViewer from './ReceiptViewer';
 import LineItemsEditor, { linesTotal } from '../invoice/LineItemsEditor';
 import PaymentsPanel from '../invoice/PaymentsPanel';
@@ -270,6 +271,7 @@ export default function VerificationDrawer() {
                   ))}
                 </select>
               </label>
+              <BranchField category={form.category} value={form.branch} onChange={set('branch')} disabled={readOnly} />
               <label className="block">
                 Invoice No
                 <input className={`${inputClass} ${dupBill ? 'border-rose-400' : ''}`} value={form.invoiceNumber ?? ''} onChange={set('invoiceNumber')} disabled={readOnly} />
