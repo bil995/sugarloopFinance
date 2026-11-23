@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check, Pencil, Printer, Trash2, X } from 'lucide-react';
 import { useSaleOutStore } from '../useSaleOutStore';
-import { SALEOUT_CATALOG, ALL_ITEMS } from '../catalog/saleOutCatalog';
-import { NP_CATALOG, NP_ALL_ITEMS } from '../catalog/nonPerishableCatalog';
+import { useCatalog } from '../catalog/useCatalog';
 import { BRANCHES } from '../components/DispatchSheetForm';
 import PageHeader from '../../components/common/PageHeader';
 import { formatCurrency } from '../../utils/format';
@@ -56,8 +55,8 @@ export default function SaleOutSearchPage() {
   const [editDate, setEditDate] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const catalog = activeTab === 'perishable' ? SALEOUT_CATALOG : NP_CATALOG;
-  const allItems = activeTab === 'perishable' ? ALL_ITEMS : NP_ALL_ITEMS;
+  // Includes items added from the dispatch sheet, so their quantities show (and survive edits).
+  const { catalog, allItems } = useCatalog(activeTab);
 
   useEffect(() => {
     fetchRecords({ from, to, type: activeTab, ...(filterBranch && { branch: filterBranch }) });
@@ -104,6 +103,9 @@ export default function SaleOutSearchPage() {
             };
           })
       );
+      // Keep lines for items not in the list (e.g. older one-off items) instead of dropping them.
+      const known = new Set(allItems.map((it) => it.name));
+      lines.push(...col.rec.lines.filter((l) => !known.has(l.itemName)));
       await updateRecord(col.rec.id, { lines, saleDate: editDate });
       cancelEdit();
       fetchRecords({ from, to, type: activeTab });

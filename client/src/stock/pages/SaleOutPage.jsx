@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { SALEOUT_CATALOG, ALL_ITEMS } from '../catalog/saleOutCatalog';
 import DispatchSheetForm from '../components/DispatchSheetForm';
 import NonPerishablePage from './NonPerishablePage';
 
@@ -36,24 +35,24 @@ export default function SaleOutPage() {
   return (
     <>
       <Tabs active={activeTab} onChange={setActiveTab} />
-      {activeTab === 'perishable' ? (
+      {/* Both sheets stay mounted so switching tabs keeps unsaved entries. */}
+      <div className={activeTab === 'perishable' ? 'space-y-6' : 'hidden'}>
         <DispatchSheetForm
-          catalog={SALEOUT_CATALOG}
-          allItems={ALL_ITEMS}
           type="perishable"
           saleDate={saleDate}
           onSaleDateChange={setSaleDate}
           branch={branch}
           onBranchChange={setBranch}
         />
-      ) : (
+      </div>
+      <div className={activeTab === 'nonperishable' ? 'space-y-6' : 'hidden'}>
         <NonPerishablePage
           saleDate={saleDate}
           onSaleDateChange={setSaleDate}
           branch={branch}
           onBranchChange={setBranch}
         />
-      )}
+      </div>
     </>
   );
 }

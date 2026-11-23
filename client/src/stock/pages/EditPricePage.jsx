@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import { useItemPricesStore } from '../useItemPricesStore';
-import { SALEOUT_CATALOG, ALL_ITEMS } from '../catalog/saleOutCatalog';
-import { NP_CATALOG, NP_ALL_ITEMS } from '../catalog/nonPerishableCatalog';
+import { useCatalog } from '../catalog/useCatalog';
 import PageHeader from '../../components/common/PageHeader';
 
 function Tabs({ active, onChange }) {
@@ -28,7 +27,8 @@ function Tabs({ active, onChange }) {
   );
 }
 
-function PriceTable({ type, catalog, allItems }) {
+function PriceTable({ type }) {
+  const { catalog, allItems } = useCatalog(type);
   const storePricesMap = useItemPricesStore((s) => s.prices);
   const fetchPrices = useItemPricesStore((s) => s.fetchPrices);
   const updatePrices = useItemPricesStore((s) => s.updatePrices);
@@ -49,7 +49,7 @@ function PriceTable({ type, catalog, allItems }) {
         })
       )
     );
-  }, [storePricesMap, type]);
+  }, [storePricesMap, type, allItems]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -141,9 +141,9 @@ export default function EditPricePage() {
       <PageHeader title="Edit Prices" subtitle="Set the prices used in Sale Out dispatch sheets." />
       <Tabs active={activeTab} onChange={setActiveTab} />
       {activeTab === 'perishable' ? (
-        <PriceTable type="perishable" catalog={SALEOUT_CATALOG} allItems={ALL_ITEMS} />
+        <PriceTable type="perishable" />
       ) : (
-        <PriceTable type="nonperishable" catalog={NP_CATALOG} allItems={NP_ALL_ITEMS} />
+        <PriceTable type="nonperishable" />
       )}
     </>
   );

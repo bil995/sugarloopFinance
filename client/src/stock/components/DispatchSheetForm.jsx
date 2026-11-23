@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Plus, Trash2 } from 'lucide-react';
 import { useSaleOutStore } from '../useSaleOutStore';
 import { useItemPricesStore } from '../useItemPricesStore';
+import { useCatalog } from '../catalog/useCatalog';
 import PageHeader from '../../components/common/PageHeader';
 import { formatCurrency } from '../../utils/format';
 
@@ -18,12 +19,15 @@ export const BRANCHES = [
 let _rowId = 0;
 const newRow = () => ({ id: ++_rowId, name: '', price: '', dispatched: '', received: '' });
 
-export default function DispatchSheetForm({ catalog, allItems, type, saleDate, onSaleDateChange, branch, onBranchChange }) {
+export default function DispatchSheetForm({ type, saleDate, onSaleDateChange, branch, onBranchChange }) {
+  // Built-in items plus items added earlier from this sheet.
+  const { catalog, allItems } = useCatalog(type);
   const createRecord = useSaleOutStore((s) => s.createRecord);
   const updateRecord = useSaleOutStore((s) => s.updateRecord);
   const storePricesMap = useItemPricesStore((s) => s.prices);
   const fetchPrices = useItemPricesStore((s) => s.fetchPrices);
   const getPrice = useItemPricesStore((s) => s.getPrice);
+  const addCustomItems = useItemPricesStore((s) => s.addCustomItems);
 
   const blankQtys = () => Object.fromEntries(allItems.map((it) => [it.name, '']));
   const blankPrices = () => Object.fromEntries(allItems.map((it) => [it.name, getPrice(type, it.name, it.price)]));
@@ -101,7 +105,8 @@ export default function DispatchSheetForm({ catalog, allItems, type, saleDate, o
     rec.lines
       .filter((l) => !allItems.some((it) => it.name === l.itemName))
       .forEach((l) => {
-        if (newCustomRows[l.category] !== undefined) {
+        if (newCustomRows[l.category] === undefined) newCustomRows[l.category] = [];
+        {
           newCustomRows[l.category].push({ id: ++_rowId, name: l.itemName, price: l.price, dispatched: l.qty, received: l.received ?? l.qty });
         }
       });
@@ -138,7 +143,7 @@ export default function DispatchSheetForm({ catalog, allItems, type, saleDate, o
   };
 
   const addCustomRow = (category) =>
-    setCustomRows((prev) => ({ ...prev, [category]: [...prev[category], newRow()] }));
+    setCustomRows((prev) => ({ ...prev, [category]: [...(prev[category] ?? []), newRow()] }));
 
   const removeCustomRow = (category, id) =>
     setCustomRows((prev) => ({ ...prev, [category]: prev[category].filter((r) => r.id !== id) }));
@@ -179,7 +184,7 @@ export default function DispatchSheetForm({ catalog, allItems, type, saleDate, o
     catalog.reduce((sum, cat) => {
       return (
         sum +
-        customRows[cat.category].reduce(
+        (customRows[cat.category] ?? []).reduce(
           (s, r) => s + (Number(r.dispatched) || 0) * (Number(r.price) || 0),
           0
         )
@@ -201,7 +206,7 @@ export default function DispatchSheetForm({ catalog, allItems, type, saleDate, o
       }));
 
     const customLines = catalog.flatMap((cat) =>
-      customRows[cat.category]
+      (customRows[cat.category] ?? [])
         .filter((r) => r.name.trim() && Number(r.dispatched) > 0)
         .map((r) => ({
           category: cat.category,
@@ -222,10 +227,37 @@ export default function DispatchSheetForm({ catalog, allItems, type, saleDate, o
       setError('Fix duplicate item names before saving.');
       return;
     }
+    // Added rows become permanent items (with their price), even without a quantity today.
+    const filledRows = Object.entries(customRows).flatMap(([category, rows]) =>
+      rows.filter((r) => r.name.trim()).map((r) => ({ ...r, category }))
+    );
+    const noPrice = filledRows.find((r) => r.price === '' || !(Number(r.price) >= 0));
+    if (noPrice) {
+      setError(`Enter a price for "${noPrice.name.trim()}".`);
+      return;
+    }
+    const halfFilled = Object.values(customRows).flat().find((r) => !r.name.trim() && (r.dispatched !== '' || r.price !== ''));
+    if (halfFilled) {
+      setError('An added row has a quantity or price but no item name. Enter the name or remove the row.');
+      return;
+    }
     const lines = [...catalogLines, ...customLines];
+    if (!lines.length && !filledRows.length) {
+      setError('Enter a dispatched quantity for at least one item.');
+      return;
+    }
 
     setSaving(true);
     try {
+      if (filledRows.length) {
+        await addCustomItems(type, filledRows.map((r) => ({ category: r.category, itemName: r.name.trim(), price: Number(r.price) })));
+      }
+      if (!lines.length) {
+        // Only new items were added; there is no dispatch to record yet.
+        setCustomRows(blankCustomRows());
+        setSaved({ itemsOnly: filledRows.length });
+        return;
+      }
       const record = editingId
         ? await updateRecord(editingId, { saleDate, branch, lines, notes, type })
         : await createRecord({ saleDate, branch, lines, notes, type });
@@ -256,7 +288,19 @@ export default function DispatchSheetForm({ catalog, allItems, type, saleDate, o
     <>
       <PageHeader title="Dispatch & Wastage Sheet" subtitle="Record daily dispatch, received, and wastage by product." />
 
-      {saved && (
+      {saved?.itemsOnly && (
+        <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          <CheckCircle2 className="h-5 w-5 shrink-0" />
+          <span>
+            {saved.itemsOnly === 1 ? 'New item added' : `${saved.itemsOnly} new items added`} to the list. No dispatch was recorded because no quantities were entered.
+          </span>
+          <button className="ml-auto text-xs underline" onClick={() => setSaved(null)}>
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {saved && !saved.itemsOnly && (
         <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
           <CheckCircle2 className="h-5 w-5 shrink-0" />
           <span>
@@ -453,7 +497,7 @@ export default function DispatchSheetForm({ catalog, allItems, type, saleDate, o
                           min="0"
                           data-nav="dispatched"
                           data-item-name={item.name}
-                          value={dispatched[item.name]}
+                          value={dispatched[item.name] ?? ''}
                           onChange={(e) => setDispatchedQty(item.name, e.target.value)}
                           onKeyDown={(e) => handleArrow(e, 'dispatched')}
                           className="w-20 rounded border border-slate-300 px-2 py-0.5 text-center text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400"
@@ -464,7 +508,7 @@ export default function DispatchSheetForm({ catalog, allItems, type, saleDate, o
                           type="number"
                           min="0"
                           data-nav="received"
-                          value={received[item.name]}
+                          value={received[item.name] ?? ''}
                           onChange={(e) => setReceivedQty(item.name, e.target.value)}
                           onKeyDown={(e) => handleArrow(e, 'received')}
                           className="w-20 rounded border border-slate-300 px-2 py-0.5 text-center text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400"
@@ -484,7 +528,7 @@ export default function DispatchSheetForm({ catalog, allItems, type, saleDate, o
                 })}
 
                 {/* Custom item rows */}
-                {customRows[cat.category].map((row) => {
+                {(customRows[cat.category] ?? []).map((row) => {
                   serial++;
                   const qty = Number(row.dispatched) || 0;
                   const price = Number(row.price) || 0;
