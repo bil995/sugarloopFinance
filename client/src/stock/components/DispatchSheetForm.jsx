@@ -193,26 +193,28 @@ export default function DispatchSheetForm({ type, saleDate, onSaleDateChange, br
 
   const handleSave = async () => {
     setError(null);
+    // A quantity counts as entered when the field is not blank — 0 is a valid entry.
+    const isEntered = (v) => v !== '' && v != null;
 
     const catalogLines = allItems
-      .filter((it) => Number(dispatched[it.name]) > 0)
+      .filter((it) => isEntered(dispatched[it.name]) || isEntered(received[it.name]))
       .map((it) => ({
         category: it.category,
         itemName: it.name,
         unit: 'per',
-        qty: Number(dispatched[it.name]),
+        qty: Number(dispatched[it.name]) || 0,
         received: Number(received[it.name]) || 0,
         price: Number(prices[it.name]) || it.price,
       }));
 
     const customLines = catalog.flatMap((cat) =>
       (customRows[cat.category] ?? [])
-        .filter((r) => r.name.trim() && Number(r.dispatched) > 0)
+        .filter((r) => r.name.trim() && (isEntered(r.dispatched) || isEntered(r.received)))
         .map((r) => ({
           category: cat.category,
           itemName: r.name.trim(),
           unit: 'per',
-          qty: Number(r.dispatched),
+          qty: Number(r.dispatched) || 0,
           received: Number(r.received) || 0,
           price: Number(r.price) || 0,
         }))
@@ -236,7 +238,7 @@ export default function DispatchSheetForm({ type, saleDate, onSaleDateChange, br
       setError(`Enter a price for "${noPrice.name.trim()}".`);
       return;
     }
-    const halfFilled = Object.values(customRows).flat().find((r) => !r.name.trim() && (r.dispatched !== '' || r.price !== ''));
+    const halfFilled = Object.values(customRows).flat().find((r) => !r.name.trim() && (isEntered(r.dispatched) || isEntered(r.price)));
     if (halfFilled) {
       setError('An added row has a quantity or price but no item name. Enter the name or remove the row.');
       return;
